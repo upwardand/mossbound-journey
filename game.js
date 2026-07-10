@@ -6,6 +6,7 @@
   const statusEl = document.querySelector("#status");
   const muteButton = document.querySelector("#muteButton");
   const fullscreenButton = document.querySelector("#fullscreenButton");
+  const landscapeButton = document.querySelector("#landscapeButton");
   const W = 320;
   const H = 180;
   const RENDER_SCALE = canvas.width / W;
@@ -1648,15 +1649,59 @@
     if (!sound.muted) sound.play("coin");
   });
 
-  fullscreenButton.addEventListener("click", async () => {
-    const target = document.querySelector(".screen-frame");
+  function activeFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  async function lockLandscape() {
     try {
-      if (!document.fullscreenElement) await target.requestFullscreen();
-      else await document.exitFullscreen();
+      if (window.screen?.orientation?.lock) await window.screen.orientation.lock("landscape");
     } catch {
-      announce("当前浏览器不支持全屏模式");
+      announce("请手动将手机旋转为横屏");
     }
-  });
+  }
+
+  async function enterGameFullscreen() {
+    const target = document.querySelector(".game-shell");
+    try {
+      if (target.requestFullscreen) await target.requestFullscreen({ navigationUI: "hide" });
+      else if (target.webkitRequestFullscreen) await Promise.resolve(target.webkitRequestFullscreen());
+      else {
+        announce("当前浏览器无法自动全屏，请手动旋转手机");
+        return;
+      }
+      await lockLandscape();
+    } catch {
+      announce("无法进入全屏，请允许全屏权限后重试");
+    }
+  }
+
+  async function exitGameFullscreen() {
+    try {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await Promise.resolve(document.webkitExitFullscreen());
+      if (window.screen?.orientation?.unlock) window.screen.orientation.unlock();
+    } catch {
+      announce("请使用浏览器的返回手势退出全屏");
+    }
+  }
+
+  async function toggleGameFullscreen() {
+    if (activeFullscreenElement()) await exitGameFullscreen();
+    else await enterGameFullscreen();
+  }
+
+  function syncFullscreenButton() {
+    fullscreenButton.textContent = activeFullscreenElement() ? "退出全屏" : "全屏";
+    if (!activeFullscreenElement() && window.screen?.orientation?.unlock) {
+      try { window.screen.orientation.unlock(); } catch { /* Unsupported on this browser. */ }
+    }
+  }
+
+  fullscreenButton.addEventListener("click", toggleGameFullscreen);
+  landscapeButton.addEventListener("click", toggleGameFullscreen);
+  document.addEventListener("fullscreenchange", syncFullscreenButton);
+  document.addEventListener("webkitfullscreenchange", syncFullscreenButton);
 
   let previous = performance.now();
   function frame(now) {

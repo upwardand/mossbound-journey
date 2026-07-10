@@ -1,0 +1,10 @@
+{
+  "name": "苔原小勇者 · Mossbound Journey",
+  "short_name": "苔原小勇者",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#101827",
+  "theme_color": "#203951",
+  "description": "一款卡通绘本风横版闯关游戏"
+}
