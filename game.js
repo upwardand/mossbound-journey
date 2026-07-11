@@ -25,36 +25,6 @@
     return width > height;
   }
 
-  function syncOrientationUI() {
-    const viewport = window.visualViewport;
-    const width = viewport?.width || window.innerWidth || document.documentElement.clientWidth;
-    const height = viewport?.height || window.innerHeight || document.documentElement.clientHeight;
-    const touchDevice = navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
-    const compactDevice = Math.min(width, height) <= 900;
-    const mobileLandscape = touchDevice && compactDevice && viewportIsLandscape();
-    const needsLandscape = touchDevice && compactDevice && !mobileLandscape;
-    gameShell.classList.toggle("is-mobile-landscape", mobileLandscape);
-    gameShell.classList.toggle("needs-landscape", needsLandscape);
-  }
-
-  function scheduleOrientationSync() {
-    syncOrientationUI();
-    setTimeout(syncOrientationUI, 120);
-    setTimeout(syncOrientationUI, 500);
-  }
-
-  window.addEventListener("resize", scheduleOrientationSync);
-  window.addEventListener("orientationchange", scheduleOrientationSync);
-  window.addEventListener("pageshow", scheduleOrientationSync);
-  window.addEventListener("focus", scheduleOrientationSync);
-  window.visualViewport?.addEventListener("resize", scheduleOrientationSync);
-  window.screen?.orientation?.addEventListener?.("change", scheduleOrientationSync);
-  document.addEventListener("visibilitychange", scheduleOrientationSync);
-  setInterval(() => {
-    if (!document.hidden) syncOrientationUI();
-  }, 400);
-  syncOrientationUI();
-
   ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
   ctx.imageSmoothingEnabled = true;
 
@@ -1701,7 +1671,6 @@
     try {
       if (window.screen?.orientation?.lock) await window.screen.orientation.lock("landscape");
     } catch {
-      scheduleOrientationSync();
       if (!viewportIsLandscape()) announce("请手动将手机旋转为横屏");
     }
   }
@@ -1716,7 +1685,6 @@
         return;
       }
       await lockLandscape();
-      scheduleOrientationSync();
     } catch {
       announce("无法进入全屏，请允许全屏权限后重试");
     }
@@ -1742,7 +1710,6 @@
     if (!activeFullscreenElement() && window.screen?.orientation?.unlock) {
       try { window.screen.orientation.unlock(); } catch { /* Unsupported on this browser. */ }
     }
-    scheduleOrientationSync();
   }
 
   fullscreenButton.addEventListener("click", toggleGameFullscreen);

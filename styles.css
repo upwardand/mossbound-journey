@@ -171,42 +171,6 @@ h1 {
   display: none;
 }
 
-.rotate-hint {
-  display: none;
-  position: absolute;
-  inset: 0;
-  z-index: 12;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 7px;
-  padding: 24px;
-  background: rgba(12, 25, 40, 0.88);
-  color: #fff2c5;
-  text-align: center;
-  backdrop-filter: blur(8px);
-}
-
-.rotate-hint strong {
-  font-size: 18px;
-}
-
-.rotate-hint small {
-  color: #bed1da;
-  font-size: 12px;
-}
-
-.rotate-icon {
-  font-size: 38px;
-  line-height: 1;
-  animation: rotate-nudge 1.8s ease-in-out infinite;
-}
-
-@keyframes rotate-nudge {
-  0%, 100% { transform: rotate(-12deg); }
-  50% { transform: rotate(78deg); }
-}
-
 .game-footer {
   display: flex;
   flex-wrap: wrap;
@@ -356,18 +320,6 @@ kbd {
     height: 52px;
     border-radius: 15px;
   }
-}
-
-.game-shell.needs-landscape .rotate-hint {
-  display: flex;
-}
-
-.game-shell.needs-landscape .touch-controls {
-  display: none !important;
-}
-
-.game-shell.is-mobile-landscape .rotate-hint {
-  display: none !important;
 }
 
 .game-shell:fullscreen,
