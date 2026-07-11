@@ -616,6 +616,8 @@
     candidate.boss = rule.boss ? {
       x: (candidate.width - 12) * TILE,
       y: 10 * TILE - 27,
+      spawnX: (candidate.width - 12) * TILE,
+      spawnY: 10 * TILE - 27,
       w: 25,
       h: 27,
       vx: 0,
@@ -630,6 +632,20 @@
       defeated: false,
     } : null;
     return candidate;
+  }
+
+  function resetBossEncounter(boss = level?.boss) {
+    if (!boss || boss.defeated) return;
+    boss.x = boss.spawnX;
+    boss.y = boss.spawnY;
+    boss.vx = 0;
+    boss.vy = 0;
+    boss.grounded = false;
+    boss.facing = -1;
+    boss.hp = boss.maxHp;
+    boss.hurt = 0;
+    boss.jumpTimer = 0.8;
+    boss.active = false;
   }
 
   function validateLevelDefinitions() {
@@ -661,6 +677,18 @@
         && Boolean(enhanced.boss) === Boolean(rule.boss)
         && enhanced.enemies.every((enemy) => ["walker", "hopper", "flyer", "charger"].includes(enemy.type));
       if (!enhancedValid) throw new Error(`Invalid enhanced mechanics at stage ${index + 1}`);
+      if (enhanced.boss) {
+        enhanced.boss.x -= 100;
+        enhanced.boss.y += 80;
+        enhanced.boss.hp -= 1;
+        enhanced.boss.active = true;
+        resetBossEncounter(enhanced.boss);
+        const resetValid = enhanced.boss.x === enhanced.boss.spawnX
+          && enhanced.boss.y === enhanced.boss.spawnY
+          && enhanced.boss.hp === enhanced.boss.maxHp
+          && !enhanced.boss.active;
+        if (!resetValid) throw new Error(`Invalid boss reset at stage ${index + 1}`);
+      }
     });
   }
 
@@ -927,6 +955,7 @@
       announce(`第 ${levelIndex + 1} 关挑战失败，按回车重试本关`);
       return;
     }
+    resetBossEncounter();
     player.x = player.spawnX;
     player.y = player.spawnY;
     player.vx = 0;
