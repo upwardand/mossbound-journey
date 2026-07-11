@@ -7,6 +7,8 @@
   const muteButton = document.querySelector("#muteButton");
   const fullscreenButton = document.querySelector("#fullscreenButton");
   const landscapeButton = document.querySelector("#landscapeButton");
+  const orientationContinueButton = document.querySelector("#orientationContinueButton");
+  const touchControls = document.querySelector(".touch-controls");
   const gameShell = document.querySelector(".game-shell");
   const W = 320;
   const H = 180;
@@ -17,14 +19,29 @@
   const SHIELD_DURATION = 12;
   const keys = new Set();
   const pressed = new Set();
+  let orientationOverride = false;
 
   function viewportIsLandscape() {
     const viewport = window.visualViewport;
-    const width = viewport?.width || window.innerWidth || document.documentElement.clientWidth;
-    const height = viewport?.height || window.innerHeight || document.documentElement.clientHeight;
     const orientationType = window.screen?.orientation?.type || "";
+    const orientationAngle = Number(window.screen?.orientation?.angle);
     const legacyAngle = typeof window.orientation === "number" ? Math.abs(window.orientation) % 180 : 0;
-    return width > height || orientationType.startsWith("landscape") || legacyAngle === 90;
+    const dimensions = [
+      [viewport?.width, viewport?.height],
+      [window.innerWidth, window.innerHeight],
+      [document.documentElement.clientWidth, document.documentElement.clientHeight],
+      [window.outerWidth, window.outerHeight],
+      [window.screen?.availWidth, window.screen?.availHeight],
+      [window.screen?.width, window.screen?.height],
+    ];
+    const wideViewport = dimensions.some(([width, height]) =>
+      Number.isFinite(width) && Number.isFinite(height) && width > height * 1.05);
+    const angleIsLandscape = Number.isFinite(orientationAngle) && Math.abs(orientationAngle) % 180 === 90;
+    return wideViewport
+      || orientationType.startsWith("landscape")
+      || angleIsLandscape
+      || legacyAngle === 90
+      || window.matchMedia("(orientation: landscape)").matches;
   }
 
   function syncOrientationUI() {
@@ -33,7 +50,7 @@
     const height = viewport?.height || window.innerHeight || document.documentElement.clientHeight;
     const touchDevice = navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
     const compactDevice = Math.min(width, height) <= 900;
-    const mobileLandscape = touchDevice && compactDevice && viewportIsLandscape();
+    const mobileLandscape = touchDevice && compactDevice && (viewportIsLandscape() || orientationOverride);
     const needsLandscape = touchDevice && compactDevice && !mobileLandscape;
     document.documentElement.classList.toggle("mobile-landscape-mode", mobileLandscape);
     gameShell.classList.toggle("is-mobile-landscape", mobileLandscape);
@@ -48,8 +65,14 @@
 
   window.addEventListener("resize", scheduleOrientationSync);
   window.addEventListener("orientationchange", scheduleOrientationSync);
+  window.addEventListener("pageshow", scheduleOrientationSync);
+  window.addEventListener("focus", scheduleOrientationSync);
   window.visualViewport?.addEventListener("resize", scheduleOrientationSync);
   window.screen?.orientation?.addEventListener?.("change", scheduleOrientationSync);
+  document.addEventListener("visibilitychange", scheduleOrientationSync);
+  setInterval(() => {
+    if (!document.hidden) syncOrientationUI();
+  }, 400);
   syncOrientationUI();
 
   ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
@@ -1650,13 +1673,19 @@
   window.addEventListener("keyup", (event) => keys.delete(normalizeKey(event)));
   window.addEventListener("blur", () => keys.clear());
 
-  canvas.addEventListener("pointerdown", () => {
+  canvas.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
     canvas.focus();
     sound.wake();
     if (state === "title") startGame(false);
     else if (state === "gameover") retryCurrentStage();
     else if (state === "victory") startGame(true);
   });
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+  gameShell.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
+  gameShell.addEventListener("gesturestart", (event) => event.preventDefault());
+  gameShell.addEventListener("contextmenu", (event) => event.preventDefault());
+  touchControls.addEventListener("pointerdown", (event) => event.preventDefault());
 
   document.querySelectorAll(".touch-key").forEach((button) => {
     const key = button.dataset.key;
@@ -1738,6 +1767,12 @@
 
   fullscreenButton.addEventListener("click", toggleGameFullscreen);
   landscapeButton.addEventListener("click", toggleGameFullscreen);
+  orientationContinueButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    orientationOverride = true;
+    scheduleOrientationSync();
+    announce("已切换为横屏操作布局");
+  });
   document.addEventListener("fullscreenchange", syncFullscreenButton);
   document.addEventListener("webkitfullscreenchange", syncFullscreenButton);
 

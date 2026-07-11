@@ -9,6 +9,7 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -27,6 +28,7 @@ body {
     linear-gradient(155deg, #17283c 0%, #0d1727 55%, #111827 100%);
   color: var(--ink);
   font-family: Inter, "Microsoft YaHei", "Segoe UI", sans-serif;
+  overscroll-behavior: none;
 }
 
 body::before,
@@ -65,6 +67,10 @@ button {
 .game-shell {
   width: min(100vw, 1120px);
   padding: 26px clamp(14px, 3.5vw, 44px) 32px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .game-header {
@@ -206,6 +212,19 @@ h1 {
   font-weight: 750;
 }
 
+.rotate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.rotate-hint button.secondary {
+  border-color: rgba(190, 221, 230, 0.38);
+  background: rgba(30, 54, 75, 0.72);
+  color: #d9e7ec;
+}
+
 @keyframes rotate-nudge {
   0%, 100% { transform: rotate(-12deg); }
   50% { transform: rotate(78deg); }
@@ -251,8 +270,8 @@ kbd {
 }
 
 .touch-key {
-  width: 64px;
-  height: 56px;
+  width: 72px;
+  height: 60px;
   border: 1px solid rgba(190, 221, 230, 0.42);
   border-radius: 18px;
   background: rgba(38, 60, 84, 0.86);
@@ -461,16 +480,16 @@ kbd {
     z-index: 28;
     margin: 0;
     padding:
-      0 max(18px, env(safe-area-inset-right))
-      max(14px, env(safe-area-inset-bottom))
-      max(18px, env(safe-area-inset-left));
-    pointer-events: none;
+      0 max(44px, 6vw, calc(env(safe-area-inset-right) + 24px))
+      max(24px, calc(env(safe-area-inset-bottom) + 12px))
+      max(44px, 6vw, calc(env(safe-area-inset-left) + 24px));
+    pointer-events: auto;
   }
 
   .game-shell:fullscreen .touch-key,
   .game-shell:-webkit-full-screen .touch-key {
-    width: 66px;
-    height: 56px;
+    width: 76px;
+    height: 64px;
     opacity: 0.78;
     pointer-events: auto;
     backdrop-filter: blur(6px);
@@ -551,15 +570,15 @@ kbd {
     z-index: 28;
     margin: 0;
     padding:
-      0 max(18px, env(safe-area-inset-right))
-      max(12px, env(safe-area-inset-bottom))
-      max(18px, env(safe-area-inset-left));
-    pointer-events: none;
+      0 max(44px, 6vw, calc(env(safe-area-inset-right) + 24px))
+      max(24px, calc(env(safe-area-inset-bottom) + 12px))
+      max(44px, 6vw, calc(env(safe-area-inset-left) + 24px));
+    pointer-events: auto;
   }
 
   .touch-key {
-    width: 66px;
-    height: 56px;
+    width: 76px;
+    height: 64px;
     opacity: 0.78;
     pointer-events: auto;
     backdrop-filter: blur(6px);
@@ -644,15 +663,15 @@ html.mobile-landscape-mode .touch-controls {
   z-index: 28;
   margin: 0;
   padding:
-    0 max(18px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom))
-    max(18px, env(safe-area-inset-left));
-  pointer-events: none;
+    0 max(44px, 6vw, calc(env(safe-area-inset-right) + 24px))
+    max(24px, calc(env(safe-area-inset-bottom) + 12px))
+    max(44px, 6vw, calc(env(safe-area-inset-left) + 24px));
+  pointer-events: auto;
 }
 
 html.mobile-landscape-mode .touch-key {
-  width: 66px;
-  height: 56px;
+  width: 76px;
+  height: 64px;
   opacity: 0.78;
   pointer-events: auto;
   backdrop-filter: blur(6px);
