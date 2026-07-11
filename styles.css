@@ -386,7 +386,7 @@ kbd {
 }
 
 .game-shell.needs-landscape .touch-controls {
-  display: none;
+  display: none !important;
 }
 
 .game-shell.is-mobile-landscape .rotate-hint {
