@@ -624,8 +624,12 @@
       vy: 0,
       grounded: false,
       facing: -1,
-      hp: index === 9 ? 6 : index === 5 ? 5 : 4,
-      maxHp: index === 9 ? 6 : index === 5 ? 5 : 4,
+      hp: index === 9 ? 6 : 4,
+      maxHp: index === 9 ? 6 : 4,
+      walkSpeed: index === 9 ? 26 : 22,
+      chargeSpeed: index === 9 ? 58 : 48,
+      jumpInterval: index === 9 ? 1.35 : index === 5 ? 1.55 : 1.65,
+      stunDuration: index === 9 ? 0.72 : 0.85,
       hurt: 0,
       jumpTimer: 0.8,
       active: false,
@@ -634,7 +638,7 @@
     return candidate;
   }
 
-  function resetBossEncounter(boss = level?.boss) {
+  function resetBossEncounter(boss = level?.boss, restoreHealth = false) {
     if (!boss || boss.defeated) return;
     boss.x = boss.spawnX;
     boss.y = boss.spawnY;
@@ -642,9 +646,9 @@
     boss.vy = 0;
     boss.grounded = false;
     boss.facing = -1;
-    boss.hp = boss.maxHp;
+    if (restoreHealth) boss.hp = boss.maxHp;
     boss.hurt = 0;
-    boss.jumpTimer = 0.8;
+    boss.jumpTimer = Math.min(0.9, boss.jumpInterval * 0.65);
     boss.active = false;
   }
 
@@ -678,14 +682,15 @@
         && enhanced.enemies.every((enemy) => ["walker", "hopper", "flyer", "charger"].includes(enemy.type));
       if (!enhancedValid) throw new Error(`Invalid enhanced mechanics at stage ${index + 1}`);
       if (enhanced.boss) {
+        const remainingHp = enhanced.boss.hp - 1;
         enhanced.boss.x -= 100;
         enhanced.boss.y += 80;
-        enhanced.boss.hp -= 1;
+        enhanced.boss.hp = remainingHp;
         enhanced.boss.active = true;
         resetBossEncounter(enhanced.boss);
         const resetValid = enhanced.boss.x === enhanced.boss.spawnX
           && enhanced.boss.y === enhanced.boss.spawnY
-          && enhanced.boss.hp === enhanced.boss.maxHp
+          && enhanced.boss.hp === remainingHp
           && !enhanced.boss.active;
         if (!resetValid) throw new Error(`Invalid boss reset at stage ${index + 1}`);
       }
@@ -1186,10 +1191,10 @@
 
     boss.facing = player.x < boss.x ? -1 : 1;
     boss.jumpTimer -= dt;
-    boss.vx = boss.facing * (boss.jumpTimer < 0.35 ? 62 : 25);
+    boss.vx = boss.facing * (boss.jumpTimer < 0.35 ? boss.chargeSpeed : boss.walkSpeed);
     if (boss.grounded && boss.jumpTimer <= 0) {
       boss.vy = -175;
-      boss.jumpTimer = 1.25;
+      boss.jumpTimer = boss.jumpInterval;
     }
     boss.vy = Math.min(boss.vy + GRAVITY * dt, 230);
     moveActor(boss, boss.vx * dt, boss.vy * dt);
@@ -1199,7 +1204,7 @@
     const dashHit = player.dashTimer > 0;
     if (stomp || dashHit) {
       boss.hp -= 1;
-      boss.hurt = 0.65;
+      boss.hurt = boss.stunDuration;
       player.vy = stomp ? -145 : -70;
       player.dashTimer = 0;
       sound.play("bossHit");
