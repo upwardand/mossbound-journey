@@ -61,7 +61,7 @@
     }
   }
 
-  const SAVE_KEY = "mossbound-journey-save-v2";
+  const SAVE_KEY = "mossbound-journey-save-v3";
 
   function readProgress() {
     try {
