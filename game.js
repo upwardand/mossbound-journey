@@ -6,7 +6,6 @@
   const statusEl = document.querySelector("#status");
   const muteButton = document.querySelector("#muteButton");
   const fullscreenButton = document.querySelector("#fullscreenButton");
-  const landscapeButton = document.querySelector("#landscapeButton");
   const touchControls = document.querySelector(".touch-controls");
   const gameShell = document.querySelector(".game-shell");
   const W = 320;
@@ -34,7 +33,6 @@
     const compactDevice = Math.min(width, height) <= 900;
     const mobileLandscape = touchDevice && compactDevice && viewportIsLandscape();
     const needsLandscape = touchDevice && compactDevice && !mobileLandscape;
-    document.documentElement.classList.toggle("mobile-landscape-mode", mobileLandscape);
     gameShell.classList.toggle("is-mobile-landscape", mobileLandscape);
     gameShell.classList.toggle("needs-landscape", needsLandscape);
   }
@@ -1748,7 +1746,6 @@
   }
 
   fullscreenButton.addEventListener("click", toggleGameFullscreen);
-  landscapeButton.addEventListener("click", toggleGameFullscreen);
   document.addEventListener("fullscreenchange", syncFullscreenButton);
   document.addEventListener("webkitfullscreenchange", syncFullscreenButton);
 
