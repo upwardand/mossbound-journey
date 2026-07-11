@@ -234,6 +234,11 @@ kbd {
   background: linear-gradient(145deg, rgba(191, 90, 101, 0.92), rgba(135, 64, 100, 0.92));
 }
 
+.dash-key {
+  border-color: rgba(255, 224, 132, 0.58);
+  background: linear-gradient(145deg, rgba(188, 133, 57, 0.94), rgba(126, 82, 70, 0.94));
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

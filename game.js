@@ -93,6 +93,9 @@
     constructor() {
       this.context = null;
       this.muted = false;
+      this.musicTimer = null;
+      this.musicStep = 0;
+      this.scene = 0;
     }
 
     wake() {
@@ -102,6 +105,7 @@
         if (AudioContext) this.context = new AudioContext();
       }
       if (this.context?.state === "suspended") this.context.resume();
+      this.startMusic();
     }
 
     tone(freq, duration, type = "square", volume = 0.035, slide = 0) {
@@ -121,6 +125,32 @@
       osc.stop(now + duration);
     }
 
+    setScene(scene) {
+      this.scene = Math.max(0, scene);
+      this.musicStep = 0;
+    }
+
+    startMusic() {
+      if (this.musicTimer) return;
+      this.musicTimer = setInterval(() => this.musicTick(), 210);
+    }
+
+    musicTick() {
+      if (this.muted || !this.context || this.context.state !== "running") return;
+      const songs = [
+        [261.6, 329.6, 392, 523.3, 392, 329.6, 293.7, 392],
+        [220, 261.6, 329.6, 392, 329.6, 261.6, 246.9, 329.6],
+        [196, 246.9, 293.7, 392, 293.7, 246.9, 220, 293.7],
+        [174.6, 220, 261.6, 349.2, 261.6, 220, 196, 261.6],
+      ];
+      const melody = songs[Math.floor(this.scene / 3) % songs.length];
+      const step = this.musicStep % melody.length;
+      this.tone(melody[step], 0.18, step % 2 ? "triangle" : "sine", 0.008);
+      if (step % 2 === 0) this.tone(melody[step] / 2, 0.28, "triangle", 0.005);
+      if (step === 0 || step === 4) this.tone(70 + (this.scene % 3) * 8, 0.08, "square", 0.006, -12);
+      this.musicStep += 1;
+    }
+
     play(name) {
       if (name === "jump") this.tone(220, 0.12, "square", 0.035, 180);
       if (name === "coin") {
@@ -128,6 +158,13 @@
         setTimeout(() => this.tone(980, 0.1, "square", 0.022, 120), 55);
       }
       if (name === "stomp") this.tone(150, 0.1, "square", 0.04, -55);
+      if (name === "dash") {
+        this.tone(180, 0.12, "sawtooth", 0.035, 420);
+        setTimeout(() => this.tone(520, 0.08, "square", 0.018, -120), 45);
+      }
+      if (name === "bounce") this.tone(260, 0.16, "sine", 0.035, 380);
+      if (name === "break") this.tone(95, 0.14, "square", 0.028, -35);
+      if (name === "bossHit") this.tone(90, 0.18, "sawtooth", 0.05, -25);
       if (name === "hit") this.tone(120, 0.3, "sawtooth", 0.045, -70);
       if (name === "checkpoint") {
         [440, 554, 659].forEach((f, i) => setTimeout(() => this.tone(f, 0.14, "square", 0.025), i * 80));
@@ -488,6 +525,113 @@
     ...extraLevelConfigs.map((config) => () => buildConfiguredLevel(config)),
   ];
 
+  const stageRules = [
+    { mechanic: "冲刺起步", moving: 0, crumble: 0, bounce: 2 },
+    { mechanic: "碎裂石桥", moving: 0, crumble: 2, bounce: 1 },
+    { mechanic: "洞窟守卫", moving: 1, crumble: 1, bounce: 1, boss: true },
+    { mechanic: "齿轮升降台", moving: 3, crumble: 1, bounce: 1 },
+    { mechanic: "云墙追逐战", moving: 2, crumble: 2, bounce: 2, wind: 18 },
+    { mechanic: "矿井巨兽", moving: 2, crumble: 2, bounce: 1, boss: true },
+    { mechanic: "熔火机关阵", moving: 3, crumble: 3, bounce: 2 },
+    { mechanic: "冰面疾走", moving: 2, crumble: 2, bounce: 2, slippery: true },
+    { mechanic: "虚空极限冲刺", moving: 4, crumble: 3, bounce: 2, wind: -16 },
+    { mechanic: "星冠最终决战", moving: 3, crumble: 3, bounce: 2, boss: true },
+  ];
+
+  function platformRuns(candidate) {
+    const runs = [];
+    for (let y = 4; y <= 8; y += 1) {
+      let x = 0;
+      while (x < candidate.width) {
+        if (!candidate.grid[y][x] || candidate.grid[y - 1]?.[x]) {
+          x += 1;
+          continue;
+        }
+        const start = x;
+        while (x < candidate.width && candidate.grid[y][x] && !candidate.grid[y - 1]?.[x]) x += 1;
+        if (x - start >= 3) runs.push({ x: start, y, width: Math.min(5, x - start) });
+      }
+    }
+    return runs;
+  }
+
+  function safeFloorTile(candidate, target) {
+    for (let offset = 0; offset < 18; offset += 1) {
+      for (const sign of [1, -1]) {
+        const tile = clamp(Math.round(target + offset * sign), 3, candidate.width - 6);
+        const dangerous = candidate.spikes.some((spike) => Math.abs(spike.x / TILE - tile) < 2);
+        if (candidate.grid[10][tile] && !dangerous) return tile;
+      }
+    }
+    return 4;
+  }
+
+  function decorateLevel(candidate, index) {
+    const rule = stageRules[index];
+    const runs = platformRuns(candidate);
+    candidate.mechanic = rule.mechanic;
+    candidate.wind = rule.wind || 0;
+    candidate.slippery = Boolean(rule.slippery);
+    candidate.movingPlatforms = [];
+    candidate.crumblePlatforms = [];
+    candidate.bouncePads = [];
+
+    const movingRuns = runs.filter((_, i) => i % 3 === 1).slice(0, rule.moving);
+    for (const [i, run] of movingRuns.entries()) {
+      for (let x = run.x; x < run.x + run.width; x += 1) candidate.grid[run.y][x] = 0;
+      candidate.movingPlatforms.push({
+        x: run.x * TILE,
+        y: run.y * TILE,
+        baseX: run.x * TILE,
+        baseY: run.y * TILE,
+        w: run.width * TILE,
+        h: 7,
+        axis: i % 2 ? "y" : "x",
+        range: i % 2 ? 20 : 28,
+        speed: 1.2 + index * 0.05 + i * 0.18,
+        phase: i * 1.7,
+        dx: 0,
+        dy: 0,
+      });
+    }
+
+    const used = new Set(movingRuns.map((run) => `${run.x}:${run.y}`));
+    const crumbleRuns = runs.filter((run, i) => i % 3 !== 1 && !used.has(`${run.x}:${run.y}`)).slice(0, rule.crumble);
+    for (const run of crumbleRuns) {
+      const width = Math.min(4, run.width);
+      for (let x = run.x; x < run.x + width; x += 1) candidate.grid[run.y][x] = 0;
+      candidate.crumblePlatforms.push({ x: run.x * TILE, y: run.y * TILE, w: width * TILE, h: 7, timer: -1, broken: false, respawn: 0 });
+    }
+
+    for (let i = 0; i < rule.bounce; i += 1) {
+      const tile = safeFloorTile(candidate, candidate.width * ((i + 1) / (rule.bounce + 1)));
+      candidate.bouncePads.push({ x: tile * TILE, y: 10 * TILE - 5, w: 16, h: 5, pulse: i * 1.3 });
+    }
+
+    candidate.enemies = candidate.enemies.map((enemy, i) => ({
+      ...enemy,
+      type: index >= 2 && i % 5 === 2 ? "flyer" : index >= 1 && i % 4 === 1 ? "hopper" : index >= 4 && i % 6 === 3 ? "charger" : "walker",
+    }));
+
+    candidate.boss = rule.boss ? {
+      x: (candidate.width - 12) * TILE,
+      y: 10 * TILE - 27,
+      w: 25,
+      h: 27,
+      vx: 0,
+      vy: 0,
+      grounded: false,
+      facing: -1,
+      hp: index === 9 ? 6 : index === 5 ? 5 : 4,
+      maxHp: index === 9 ? 6 : index === 5 ? 5 : 4,
+      hurt: 0,
+      jumpTimer: 0.8,
+      active: false,
+      defeated: false,
+    } : null;
+    return candidate;
+  }
+
   function validateLevelDefinitions() {
     if (levelBuilders.length !== 10) throw new Error(`Expected 10 levels, received ${levelBuilders.length}`);
     levelBuilders.forEach((build, index) => {
@@ -509,6 +653,14 @@
         && candidate.powerups.length >= 5
         && candidate.enemies.length > 0;
       if (!valid) throw new Error(`Invalid level definition at stage ${index + 1}`);
+      const enhanced = decorateLevel(build(), index);
+      const rule = stageRules[index];
+      const enhancedValid = enhanced.movingPlatforms.length === rule.moving
+        && enhanced.crumblePlatforms.length === rule.crumble
+        && enhanced.bouncePads.length === rule.bounce
+        && Boolean(enhanced.boss) === Boolean(rule.boss)
+        && enhanced.enemies.every((enemy) => ["walker", "hopper", "flyer", "charger"].includes(enemy.type));
+      if (!enhancedValid) throw new Error(`Invalid enhanced mechanics at stage ${index + 1}`);
     });
   }
 
@@ -534,6 +686,12 @@
   let motes = [];
   let time = 0;
   let bannerTimer = 0;
+  let score = 0;
+  let combo = 0;
+  let comboTimer = 0;
+  let deathsThisLevel = 0;
+  let levelStartTime = 0;
+  let clearRank = "C";
 
   function makePlayer(x, y) {
     return {
@@ -554,6 +712,8 @@
       shield: false,
       shieldTimer: 0,
       invincible: 0,
+      dashTimer: 0,
+      dashCooldown: 0,
       runCycle: 0,
       spawnX: x,
       spawnY: y,
@@ -562,7 +722,7 @@
 
   function loadLevel(index) {
     levelIndex = index;
-    level = levelBuilders[index]();
+    level = decorateLevel(levelBuilders[index](), index);
     player = makePlayer(level.spawn.x, level.spawn.y);
     level.enemies = level.enemies.map((enemy, i) => ({
       ...enemy,
@@ -574,6 +734,9 @@
       alive: true,
       squish: 0,
       seed: i * 1.7,
+      hopTimer: 0.5 + (i % 4) * 0.3,
+      baseY: enemy.y,
+      originX: enemy.x,
     }));
     cameraX = 0;
     cameraLookAhead = 0;
@@ -586,6 +749,11 @@
       phase: i * 0.8,
     }));
     bannerTimer = 2.2;
+    combo = 0;
+    comboTimer = 0;
+    deathsThisLevel = 0;
+    levelStartTime = time;
+    sound.setScene(index);
     announce(`第 ${index + 1} 关：${level.name}`);
   }
 
@@ -593,6 +761,7 @@
     const continueSavedGame = !forceNew && !progress.completed;
     const startIndex = continueSavedGame ? progress.current : 0;
     totalCoins = continueSavedGame ? progress.totalCoins : 0;
+    score = 0;
     lives = 3;
     saveProgress(startIndex, totalCoins, false);
     loadLevel(startIndex);
@@ -655,6 +824,67 @@
     }
   }
 
+  function updateSpecialPlatforms(dt) {
+    for (const platform of level.movingPlatforms) {
+      const oldX = platform.x;
+      const oldY = platform.y;
+      const wave = Math.sin(time * platform.speed + platform.phase);
+      platform.x = platform.baseX + (platform.axis === "x" ? wave * platform.range : 0);
+      platform.y = platform.baseY + (platform.axis === "y" ? wave * platform.range : 0);
+      platform.dx = platform.x - oldX;
+      platform.dy = platform.y - oldY;
+    }
+    for (const platform of level.crumblePlatforms) {
+      if (platform.broken) {
+        platform.respawn -= dt;
+        if (platform.respawn <= 0) {
+          platform.broken = false;
+          platform.timer = -1;
+        }
+      } else if (platform.timer >= 0) {
+        platform.timer -= dt;
+        if (platform.timer <= 0) {
+          platform.broken = true;
+          platform.respawn = 2.8;
+          sound.play("break");
+          addParticles(platform.x + platform.w / 2, platform.y, level.palette.brick, 12, 55);
+        }
+      }
+    }
+  }
+
+  function resolveSpecialPlatforms(actor, previousBottom) {
+    const surfaces = [
+      ...level.movingPlatforms,
+      ...level.crumblePlatforms.filter((platform) => !platform.broken),
+    ];
+    if (actor.vy >= 0) {
+      for (const platform of surfaces) {
+        const currentBottom = actor.y + actor.h;
+        const horizontal = actor.x + actor.w > platform.x + 2 && actor.x < platform.x + platform.w - 2;
+        if (!horizontal || previousBottom > platform.y + 5 || currentBottom < platform.y) continue;
+        actor.y = platform.y - actor.h;
+        actor.vy = 0;
+        actor.grounded = true;
+        if (platform.dx) actor.x += platform.dx;
+        if (Object.prototype.hasOwnProperty.call(platform, "timer") && platform.timer < 0) platform.timer = 0.55;
+        break;
+      }
+    }
+
+    if (actor !== player || actor.vy < 0) return;
+    for (const pad of level.bouncePads) {
+      const horizontal = actor.x + actor.w > pad.x + 2 && actor.x < pad.x + pad.w - 2;
+      if (!horizontal || previousBottom > pad.y + 5 || actor.y + actor.h < pad.y) continue;
+      actor.y = pad.y - actor.h;
+      actor.vy = -270;
+      actor.grounded = false;
+      sound.play("bounce");
+      addParticles(pad.x + 8, pad.y, "#9ff3c6", 10, 55);
+      break;
+    }
+  }
+
   function addParticles(x, y, color, count = 6, force = 45) {
     for (let i = 0; i < count; i += 1) {
       const angle = Math.random() * Math.PI * 2;
@@ -685,6 +915,9 @@
       return;
     }
     lives -= 1;
+    deathsThisLevel += 1;
+    combo = 0;
+    comboTimer = 0;
     sound.play("hit");
     shake = 0.28;
     addParticles(player.x + 5, player.y + 7, "#ef6375", 12, 75);
@@ -708,7 +941,20 @@
     const right = keys.has("ArrowRight") || keys.has("KeyD");
     const jumpHeld = keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW");
     const jumpPressed = pressed.has("Space") || pressed.has("ArrowUp") || pressed.has("KeyW");
+    const dashPressed = pressed.has("ShiftLeft") || pressed.has("ShiftRight") || pressed.has("KeyJ");
     const axis = Number(right) - Number(left);
+
+    player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+    if (dashPressed && player.dashCooldown <= 0) {
+      player.dashTimer = 0.15;
+      player.dashCooldown = 0.58;
+      player.vx = player.facing * 215;
+      player.vy = 0;
+      player.invincible = Math.max(player.invincible, 0.17);
+      sound.play("dash");
+      addParticles(player.x + player.w / 2, player.y + player.h / 2, "#ffe08a", 12, 75);
+      shake = Math.max(shake, 0.08);
+    }
 
     if (jumpPressed) player.jumpBuffer = 0.13;
     else player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
@@ -720,34 +966,43 @@
     }
     else player.coyote = Math.max(0, player.coyote - dt);
 
-    const targetSpeed = axis * 82;
-    const accel = player.grounded ? 650 : 360;
-    player.vx = approach(player.vx, targetSpeed, accel * dt);
-    if (!axis) player.vx = approach(player.vx, 0, (player.grounded ? 760 : 110) * dt);
-    if (axis) player.facing = axis;
+    const previousBottom = player.y + player.h;
+    if (player.dashTimer > 0) {
+      player.dashTimer = Math.max(0, player.dashTimer - dt);
+      moveActor(player, player.vx * dt, 0);
+      addParticles(player.x + player.w / 2 - player.facing * 5, player.y + player.h / 2, "#f7cf72", 1, 18);
+    } else {
+      const targetSpeed = axis * 88;
+      const accel = player.grounded ? (level.slippery ? 260 : 680) : 380;
+      player.vx = approach(player.vx, targetSpeed, accel * dt);
+      if (!axis) player.vx = approach(player.vx, 0, (player.grounded ? (level.slippery ? 95 : 780) : 115) * dt);
+      if (axis) player.facing = axis;
 
-    const groundJump = player.coyote > 0;
-    const airJump = !groundJump && player.airJumps > 0;
-    if (player.jumpBuffer > 0 && (groundJump || airJump)) {
-      if (airJump) player.airJumps -= 1;
-      player.vy = airJump ? -190 : -200;
-      player.jumpHold = airJump ? 0.2 : 0.28;
-      player.grounded = false;
-      player.coyote = 0;
-      player.jumpBuffer = 0;
-      sound.play("jump");
-      addParticles(player.x + 6, player.y + player.h, airJump ? "#8de5e3" : "#d8c59f", airJump ? 8 : 4, airJump ? 38 : 25);
-    }
+      const groundJump = player.coyote > 0;
+      const airJump = !groundJump && player.airJumps > 0;
+      if (player.jumpBuffer > 0 && (groundJump || airJump)) {
+        if (airJump) player.airJumps -= 1;
+        player.vy = airJump ? -190 : -205;
+        player.jumpHold = airJump ? 0.2 : 0.28;
+        player.grounded = false;
+        player.coyote = 0;
+        player.jumpBuffer = 0;
+        sound.play("jump");
+        addParticles(player.x + 6, player.y + player.h, airJump ? "#8de5e3" : "#d8c59f", airJump ? 8 : 4, airJump ? 38 : 25);
+      }
 
-    if (jumpHeld && player.jumpHold > 0 && player.vy < 0) {
-      player.vy -= 230 * dt;
-      player.jumpHold = Math.max(0, player.jumpHold - dt);
-    } else if (!jumpHeld) {
-      player.jumpHold = 0;
-      if (player.vy < -55) player.vy += 480 * dt;
+      if (jumpHeld && player.jumpHold > 0 && player.vy < 0) {
+        player.vy -= 230 * dt;
+        player.jumpHold = Math.max(0, player.jumpHold - dt);
+      } else if (!jumpHeld) {
+        player.jumpHold = 0;
+        if (player.vy < -55) player.vy += 480 * dt;
+      }
+      if (!player.grounded && level.wind) player.vx += level.wind * dt;
+      player.vy = Math.min(player.vy + GRAVITY * dt, 245);
+      moveActor(player, player.vx * dt, player.vy * dt);
     }
-    player.vy = Math.min(player.vy + GRAVITY * dt, 245);
-    moveActor(player, player.vx * dt, player.vy * dt);
+    resolveSpecialPlatforms(player, previousBottom);
 
     player.runCycle += Math.abs(player.vx) * dt * 0.14;
     player.invincible = Math.max(0, player.invincible - dt);
@@ -778,6 +1033,9 @@
         coin.got = true;
         levelCoins += 1;
         totalCoins += 1;
+        combo = Math.min(9, combo + 1);
+        comboTimer = 2.4;
+        score += 10 * combo;
         sound.play("coin");
         addParticles(coin.x + 3, coin.y + 3, "#ffd45a", 8, 46);
       }
@@ -814,10 +1072,16 @@
       addParticles(level.checkpoint.x + 5, level.checkpoint.y + 4, "#6ff0d2", 16, 55);
     }
 
-    if (overlaps(player, level.goal)) {
+    if (overlaps(player, level.goal) && !level.boss?.defeated && level.boss) {
+      announce("星门被守卫封锁，先击败首领");
+    } else if (overlaps(player, level.goal)) {
       state = "levelclear";
       stateTimer = 0;
       player.vx = 0;
+      const coinRatio = levelCoins / Math.max(1, level.coins.length);
+      const elapsed = time - levelStartTime;
+      clearRank = coinRatio >= 0.8 && deathsThisLevel === 0 && elapsed < 95 ? "S" : coinRatio >= 0.55 && deathsThisLevel <= 1 ? "A" : coinRatio >= 0.3 ? "B" : "C";
+      score += { S: 1000, A: 650, B: 350, C: 150 }[clearRank];
       sound.play("win");
       if (levelIndex < levelBuilders.length - 1) saveProgress(levelIndex + 1, totalCoins, false);
       else saveProgress(0, totalCoins, true);
@@ -832,31 +1096,96 @@
         continue;
       }
 
-      enemy.vx = enemy.dir * 26;
-      enemy.vy = Math.min(enemy.vy + GRAVITY * dt, 200);
-      const beforeX = enemy.x;
-      moveActor(enemy, enemy.vx * dt, enemy.vy * dt);
-      if (Math.abs(enemy.x - beforeX) < 0.01) enemy.dir *= -1;
+      if (enemy.type === "flyer") {
+        enemy.x += enemy.dir * 23 * dt;
+        enemy.y = enemy.baseY - 18 + Math.sin(time * 3.2 + enemy.seed) * 11;
+        if (Math.abs(enemy.x - enemy.originX) > 42) enemy.dir *= -1;
+      } else {
+        const nearby = Math.abs(player.x - enemy.x) < 72 && Math.abs(player.y - enemy.y) < 28;
+        const speed = enemy.type === "charger" && nearby ? 58 : 26;
+        if (enemy.type === "charger" && nearby) enemy.dir = player.x < enemy.x ? -1 : 1;
+        enemy.vx = enemy.dir * speed;
+        if (enemy.type === "hopper") {
+          enemy.hopTimer -= dt;
+          if (enemy.grounded && enemy.hopTimer <= 0) {
+            enemy.vy = -145;
+            enemy.hopTimer = 1.1 + (enemy.seed % 0.5);
+          }
+        }
+        enemy.vy = Math.min(enemy.vy + GRAVITY * dt, 200);
+        const beforeX = enemy.x;
+        moveActor(enemy, enemy.vx * dt, enemy.vy * dt);
+        if (Math.abs(enemy.x - beforeX) < 0.01) enemy.dir *= -1;
 
-      if (enemy.grounded) {
-        const probeX = enemy.dir > 0 ? enemy.x + enemy.w + 2 : enemy.x - 2;
-        const probeY = enemy.y + enemy.h + 2;
-        if (!isSolid(Math.floor(probeX / TILE), Math.floor(probeY / TILE))) enemy.dir *= -1;
+        if (enemy.grounded) {
+          const probeX = enemy.dir > 0 ? enemy.x + enemy.w + 2 : enemy.x - 2;
+          const probeY = enemy.y + enemy.h + 2;
+          if (!isSolid(Math.floor(probeX / TILE), Math.floor(probeY / TILE))) enemy.dir *= -1;
+        }
       }
 
-      if (overlaps(player, enemy) && player.invincible <= 0) {
+      if (overlaps(player, enemy) && (player.invincible <= 0 || player.dashTimer > 0)) {
         const stomp = player.vy > 35 && player.y + player.h - enemy.y < 8;
-        if (stomp) {
+        const dashHit = player.dashTimer > 0;
+        if (stomp || dashHit) {
           enemy.alive = false;
           enemy.squish = 0.3;
-          player.vy = -115;
-          sound.play("stomp");
+          if (stomp) player.vy = -115;
+          sound.play(dashHit ? "dash" : "stomp");
+          combo = Math.min(9, combo + 2);
+          comboTimer = 2.8;
+          score += dashHit ? 140 : 100;
           addParticles(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, "#95d45a", 8, 48);
           shake = 0.1;
         } else {
           damagePlayer();
         }
       }
+    }
+  }
+
+  function updateBoss(dt) {
+    const boss = level.boss;
+    if (!boss || boss.defeated) return;
+    boss.hurt = Math.max(0, boss.hurt - dt);
+    if (!boss.active) {
+      if (Math.abs(player.x - boss.x) < 210) {
+        boss.active = true;
+        announce("首领出现！冲刺或踩击可以造成伤害");
+      } else return;
+    }
+
+    boss.facing = player.x < boss.x ? -1 : 1;
+    boss.jumpTimer -= dt;
+    boss.vx = boss.facing * (boss.jumpTimer < 0.35 ? 62 : 25);
+    if (boss.grounded && boss.jumpTimer <= 0) {
+      boss.vy = -175;
+      boss.jumpTimer = 1.25;
+    }
+    boss.vy = Math.min(boss.vy + GRAVITY * dt, 230);
+    moveActor(boss, boss.vx * dt, boss.vy * dt);
+
+    if (!overlaps(player, boss) || boss.hurt > 0) return;
+    const stomp = player.vy > 35 && player.y + player.h - boss.y < 10;
+    const dashHit = player.dashTimer > 0;
+    if (stomp || dashHit) {
+      boss.hp -= 1;
+      boss.hurt = 0.65;
+      player.vy = stomp ? -145 : -70;
+      player.dashTimer = 0;
+      sound.play("bossHit");
+      shake = 0.25;
+      score += 250;
+      addParticles(boss.x + boss.w / 2, boss.y + boss.h / 2, "#ffbd73", 20, 85);
+      if (boss.hp <= 0) {
+        boss.defeated = true;
+        score += 1200;
+        sound.play("win");
+        announce("首领已击败，星门解锁！");
+        addParticles(boss.x + boss.w / 2, boss.y + boss.h / 2, "#ffe788", 40, 110);
+      }
+    } else {
+      damagePlayer();
     }
   }
 
@@ -875,6 +1204,8 @@
     stateTimer += dt;
     bannerTimer = Math.max(0, bannerTimer - dt);
     shake = Math.max(0, shake - dt);
+    comboTimer = Math.max(0, comboTimer - dt);
+    if (comboTimer === 0) combo = 0;
 
     if (pressed.has("KeyP") && ["playing", "paused"].includes(state)) {
       state = state === "playing" ? "paused" : "playing";
@@ -889,8 +1220,10 @@
     }
 
     if (state === "playing") {
+      updateSpecialPlatforms(dt);
       updatePlayer(dt);
       updateEnemies(dt);
+      updateBoss(dt);
       const desiredLookAhead = clamp(player.vx * 0.22, -18, 18);
       cameraLookAhead = lerp(cameraLookAhead, desiredLookAhead, 1 - Math.pow(0.08, dt));
       const focusX = player.x + player.w / 2 + cameraLookAhead;
@@ -1143,12 +1476,16 @@
       ctx.fill();
     }
 
+    for (const platform of level.movingPlatforms) drawSpecialPlatform(platform, "moving");
+    for (const platform of level.crumblePlatforms) if (!platform.broken) drawSpecialPlatform(platform, "crumble");
+    for (const pad of level.bouncePads) drawBouncePad(pad);
     for (const spike of level.spikes) drawSpikes(spike);
     for (const coin of level.coins) if (!coin.got) drawCoin(coin);
     for (const powerup of level.powerups) if (!powerup.got) drawPowerup(powerup);
     drawCheckpoint(level.checkpoint);
     drawGoal(level.goal);
     for (const enemy of level.enemies) drawEnemy(enemy);
+    drawBoss(level.boss);
 
     for (const particle of particles) {
       ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
@@ -1159,6 +1496,81 @@
     }
     ctx.globalAlpha = 1;
     drawPlayer();
+  }
+
+  function drawSpecialPlatform(platform, kind) {
+    const x = platform.x - cameraX;
+    const y = platform.y - 12;
+    if (x + platform.w < -8 || x > W + 8) return;
+    const warning = kind === "crumble" && platform.timer >= 0;
+    ctx.save();
+    if (warning) ctx.translate((Math.random() - 0.5) * 1.8, 0);
+    const fill = kind === "moving" ? "#5ba8ae" : warning ? "#d7835d" : "#a36f58";
+    fillRounded(x, y, platform.w, platform.h, 3, fill, "rgba(242, 255, 238, .55)", 0.8);
+    ctx.fillStyle = kind === "moving" ? "rgba(169,255,241,.65)" : "rgba(255,226,183,.5)";
+    for (let px = x + 6; px < x + platform.w - 3; px += 12) ctx.fillRect(px, y + 2, 5, 1);
+    ctx.restore();
+  }
+
+  function drawBouncePad(pad) {
+    const x = pad.x - cameraX;
+    const y = pad.y - 12;
+    const pulse = 1 + Math.sin(time * 7 + pad.pulse) * 0.12;
+    ctx.save();
+    ctx.translate(x + 8, y + 4);
+    ctx.scale(1, pulse);
+    fillRounded(-8, -4, 16, 5, 2.5, "#55d39a", "#d6ffe7", 0.8);
+    ctx.fillStyle = "#f7e879";
+    ctx.beginPath();
+    ctx.moveTo(-4, -1);
+    ctx.lineTo(0, -4);
+    ctx.lineTo(4, -1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBoss(boss) {
+    if (!boss || boss.defeated) return;
+    const x = boss.x - cameraX;
+    const y = boss.y - 12;
+    if (x < -40 || x > W + 40) return;
+    ctx.save();
+    if (boss.hurt > 0 && Math.floor(boss.hurt * 18) % 2 === 0) ctx.globalAlpha = 0.45;
+    ctx.fillStyle = "rgba(10, 18, 31, .3)";
+    ctx.beginPath();
+    ctx.ellipse(x + boss.w / 2, y + boss.h, 16, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const body = ctx.createLinearGradient(x, y, x, y + boss.h);
+    body.addColorStop(0, level.palette.enemyLight || "#ffc078");
+    body.addColorStop(1, level.palette.enemy || "#b84d62");
+    fillRounded(x, y + 4, boss.w, boss.h - 4, 10, body, "rgba(255,240,190,.55)", 1);
+    ctx.fillStyle = "#fff7dc";
+    ctx.beginPath();
+    ctx.arc(x + 7, y + 13, 3, 0, Math.PI * 2);
+    ctx.arc(x + 18, y + 13, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#36283d";
+    ctx.beginPath();
+    ctx.arc(x + 7 + boss.facing, y + 13, 1.2, 0, Math.PI * 2);
+    ctx.arc(x + 18 + boss.facing, y + 13, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f6d067";
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + 6);
+    ctx.lineTo(x + 7, y - 1);
+    ctx.lineTo(x + 11, y + 6);
+    ctx.lineTo(x + 15, y - 3);
+    ctx.lineTo(x + 20, y + 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    if (boss.active) {
+      fillRounded(104, 27, 112, 9, 4, "rgba(20,25,39,.8)", "rgba(255,226,154,.38)", 0.6);
+      ctx.fillStyle = "#ef756e";
+      ctx.fillRect(108, 30, 104 * (boss.hp / boss.maxHp), 3);
+      drawPixelText("首领", 160, 28, 5, "#fff0c3", "center");
+    }
   }
 
   function drawSpikes(spike) {
@@ -1365,6 +1777,32 @@
     ctx.arc(x + 4.4, y + 6.25 + bob, 0.65, 0, Math.PI * 2);
     ctx.arc(x + 8.8, y + 6.25 + bob, 0.65, 0, Math.PI * 2);
     ctx.fill();
+    if (enemy.type === "flyer") {
+      ctx.fillStyle = "rgba(207,245,255,.72)";
+      ctx.beginPath();
+      ctx.ellipse(x - 1, y + 5, 4, 2, -0.5, 0, Math.PI * 2);
+      ctx.ellipse(x + 14, y + 5, 4, 2, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (enemy.type === "hopper") {
+      ctx.strokeStyle = "#fff0b5";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x + 3, y + 2);
+      ctx.lineTo(x + 1, y - 2);
+      ctx.moveTo(x + 10, y + 2);
+      ctx.lineTo(x + 12, y - 2);
+      ctx.stroke();
+    } else if (enemy.type === "charger") {
+      ctx.fillStyle = "#f3d078";
+      ctx.beginPath();
+      ctx.moveTo(x + 1, y + 5);
+      ctx.lineTo(x - 3, y + 2);
+      ctx.lineTo(x + 1, y + 8);
+      ctx.moveTo(x + 12, y + 5);
+      ctx.lineTo(x + 16, y + 2);
+      ctx.lineTo(x + 12, y + 8);
+      ctx.fill();
+    }
   }
 
   function drawHeroFigure(x, y, scale = 1, flip = false, step = 0) {
@@ -1463,19 +1901,25 @@
 
   function drawHud() {
     if (!["playing", "paused", "levelclear"].includes(state)) return;
-    fillRounded(5, 5, 126, 18, 7, "rgba(18, 34, 50, .72)", "rgba(223, 241, 242, .22)", 0.7);
+    fillRounded(5, 5, 145, 18, 7, "rgba(18, 34, 50, .72)", "rgba(223, 241, 242, .22)", 0.7);
     for (let i = 0; i < 3; i += 1) drawHeart(10 + i * 11.5, 10, i < lives);
     drawPixelText(`● ${String(levelCoins).padStart(2, "0")}/${level.coins.length}`, 49, 10, 7, "#ffd979");
-    drawPixelText(`${levelIndex + 1} / ${levelBuilders.length}`, 122, 10, 7, "#e7f1f5", "right");
+    drawPixelText(`${levelIndex + 1} / ${levelBuilders.length}`, 142, 10, 7, "#e7f1f5", "right");
     if (player.hasFeather) {
-      fillRounded(136, 7, 37, 14, 6, "rgba(56, 124, 137, .72)", "rgba(197, 255, 248, .42)", 0.6);
-      drawPixelText(`风羽 ${Math.ceil(player.featherTimer)}`, 154.5, 10, 6, "#d8fff9", "center");
+      fillRounded(154, 7, 37, 14, 6, "rgba(56, 124, 137, .72)", "rgba(197, 255, 248, .42)", 0.6);
+      drawPixelText(`风羽 ${Math.ceil(player.featherTimer)}`, 172.5, 10, 6, "#d8fff9", "center");
     }
     if (player.shield) {
-      const shieldX = player.hasFeather ? 177 : 136;
+      const shieldX = player.hasFeather ? 195 : 154;
       fillRounded(shieldX, 7, 37, 14, 6, "rgba(55, 105, 151, .76)", "rgba(183, 235, 255, .46)", 0.6);
       drawPixelText(`星盾 ${Math.ceil(player.shieldTimer)}`, shieldX + 18.5, 10, 6, "#d8f4ff", "center");
     }
+    fillRounded(270, 7, 45, 14, 6, "rgba(40, 48, 69, .78)", "rgba(255, 224, 151, .35)", 0.6);
+    ctx.fillStyle = player.dashCooldown <= 0 ? "#f7d873" : "#6f7f91";
+    ctx.fillRect(275, 17, 35 * (1 - player.dashCooldown / 0.58), 1.5);
+    drawPixelText(player.dashCooldown <= 0 ? "冲刺 READY" : "冲刺", 292.5, 9, 5, "#fff0bd", "center");
+    drawPixelText(`SCORE ${score}`, 315, 25, 5, "#dce8ee", "right");
+    if (combo > 1 && comboTimer > 0) drawPixelText(`COMBO ×${combo}`, W / 2, 27, 7, "#ffda74", "center");
   }
 
   function drawOverlay() {
@@ -1485,7 +1929,7 @@
       fillRounded(71, 63, 178, 40, 10, "rgba(18, 34, 50, .82)", "rgba(228, 244, 241, .28)", 0.8);
       drawPixelText(`STAGE ${levelIndex + 1}`, W / 2, 70, 8, "#f1c75b", "center");
       drawPixelText(level.name, W / 2, 82, 12, "#fff4da", "center");
-      drawPixelText(level.subtitle, W / 2, 96, 5, "#9fb3c7", "center");
+      drawPixelText(`${level.subtitle} · ${level.mechanic}`, W / 2, 96, 5, "#9fb3c7", "center");
       ctx.globalAlpha = 1;
     }
 
@@ -1501,7 +1945,7 @@
       panel(67, 57, 186, 66);
       drawPixelText("STAGE CLEAR!", W / 2, 66, 14, "#ffe071", "center");
       drawPixelText(`${level.name} 已通过`, W / 2, 90, 8, "#f5e7c4", "center");
-      drawPixelText(`本关收集  ${levelCoins}/${level.coins.length}`, W / 2, 105, 7, "#a9edcf", "center");
+      drawPixelText(`评价 ${clearRank}  ·  收集 ${levelCoins}/${level.coins.length}`, W / 2, 105, 7, clearRank === "S" ? "#ffe77f" : "#a9edcf", "center");
       drawPixelText(levelIndex < levelBuilders.length - 1 ? "下一关进度已保存" : "十关冒险记录完成", W / 2, 116, 5, "#b7c8d8", "center");
     }
   }
@@ -1564,8 +2008,8 @@
     drawPixelText(startLabel, W / 2, 105, 8, pulse, "center");
     const touchMode = window.matchMedia("(max-width: 700px), (pointer: coarse) and (max-width: 760px)").matches;
     fillRounded(69, 127, 182, 31, 10, "rgba(20, 39, 54, .48)", "rgba(220, 240, 237, .18)", 0.6);
-    drawPixelText(touchMode ? "左右按钮移动  ·  ‘跳’按钮跳跃" : "A / D 移动  ·  空格键跳跃", W / 2, 133, 7, "#eef5f2", "center");
-    drawPixelText("长按跳得更高  ·  风羽限时二段跳", W / 2, 147, 6, "#c6d8dc", "center");
+    drawPixelText(touchMode ? "左右移动 · 跳跃 · 冲刺" : "A / D 移动 · 空格跳跃 · SHIFT 冲刺", W / 2, 133, 7, "#eef5f2", "center");
+    drawPixelText("踩怪、冲刺击破敌人 · 每三关挑战首领", W / 2, 147, 6, "#c6d8dc", "center");
   }
 
   function drawEndScreen(victory) {
@@ -1614,7 +2058,7 @@
 
   window.addEventListener("keydown", (event) => {
     const key = normalizeKey(event);
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(key)) event.preventDefault();
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "ShiftLeft", "ShiftRight"].includes(key)) event.preventDefault();
     if (!keys.has(key)) pressed.add(key);
     keys.add(key);
     sound.wake();
@@ -1659,8 +2103,11 @@
 
   muteButton.addEventListener("click", () => {
     sound.muted = !sound.muted;
-    muteButton.textContent = `声音：${sound.muted ? "关" : "开"}`;
-    if (!sound.muted) sound.play("coin");
+    muteButton.textContent = `音乐：${sound.muted ? "关" : "开"}`;
+    if (!sound.muted) {
+      sound.wake();
+      sound.play("coin");
+    }
   });
 
   function activeFullscreenElement() {
