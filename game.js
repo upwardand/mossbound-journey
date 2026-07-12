@@ -2245,10 +2245,12 @@
   }
 
   async function enterGameFullscreen() {
-    const target = gameShell;
+    const target = document.documentElement;
     try {
       if (target.requestFullscreen) await target.requestFullscreen({ navigationUI: "hide" });
       else if (target.webkitRequestFullscreen) await Promise.resolve(target.webkitRequestFullscreen());
+      else if (gameShell.requestFullscreen) await gameShell.requestFullscreen({ navigationUI: "hide" });
+      else if (gameShell.webkitRequestFullscreen) await Promise.resolve(gameShell.webkitRequestFullscreen());
       else {
         announce("当前浏览器无法自动全屏，请手动旋转手机");
         return;
