@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#101827" />
     <title>苔原小勇者 · Mossbound Journey</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect width=%2216%22 height=%2216%22 fill=%22%23101827%22/><rect x=%223%22 y=%224%22 width=%2210%22 height=%228%22 fill=%22%2384a94b%22/><rect x=%225%22 y=%226%22 width=%222%22 height=%222%22 fill=%22%23101827%22/><rect x=%229%22 y=%226%22 width=%222%22 height=%222%22 fill=%22%23101827%22/></svg>" />
-    <link rel="manifest" href="manifest.webmanifest?v=20260712-2" />
-    <link rel="stylesheet" href="styles.css?v=20260712-2" />
+    <link rel="manifest" href="manifest.webmanifest?v=20260712-3" />
+    <link rel="stylesheet" href="styles.css?v=20260712-3" />
   </head>
   <body>
     <main class="game-shell">
@@ -18,6 +18,7 @@
         </div>
         <div class="header-actions">
           <button id="muteButton" type="button" aria-label="切换音乐和音效">音乐：开</button>
+          <button id="menuButton" type="button">菜单</button>
           <button id="fullscreenButton" type="button">全屏</button>
         </div>
       </header>
@@ -39,15 +40,25 @@
         </div>
       </div>
 
+      <div id="gameMenu" class="game-menu" role="dialog" aria-modal="true" aria-label="游戏菜单" hidden>
+        <div class="game-menu-panel">
+          <strong>游戏暂停</strong>
+          <small>可以继续、重开本关或返回选关</small>
+          <button id="resumeButton" type="button">继续游戏</button>
+          <button id="restartButton" type="button">重新开始本关</button>
+          <button id="levelSelectButton" type="button">返回选关</button>
+        </div>
+      </div>
+
       <footer class="game-footer">
         <span><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> 移动</span>
         <span><kbd>W</kbd> / <kbd>空格</kbd> 跳跃（长按更高）</span>
         <span><kbd>SHIFT</kbd> / <kbd>J</kbd> 冲刺</span>
-        <span><kbd>P</kbd> 暂停</span>
+        <span><kbd>P</kbd> 暂停菜单</span>
         <span><kbd>R</kbd> 重开</span>
       </footer>
       <p id="status" class="sr-only" aria-live="polite"></p>
     </main>
-    <script src="game.js?v=20260712-2"></script>
+    <script src="game.js?v=20260712-3"></script>
   </body>
 </html>

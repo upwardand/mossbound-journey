@@ -5,9 +5,14 @@
   const ctx = canvas.getContext("2d");
   const statusEl = document.querySelector("#status");
   const muteButton = document.querySelector("#muteButton");
+  const menuButton = document.querySelector("#menuButton");
   const fullscreenButton = document.querySelector("#fullscreenButton");
   const touchControls = document.querySelector(".touch-controls");
   const gameShell = document.querySelector(".game-shell");
+  const gameMenu = document.querySelector("#gameMenu");
+  const resumeButton = document.querySelector("#resumeButton");
+  const restartButton = document.querySelector("#restartButton");
+  const levelSelectButton = document.querySelector("#levelSelectButton");
   const W = 320;
   const H = 180;
   const RENDER_SCALE = canvas.width / W;
@@ -806,6 +811,7 @@
     saveProgress(startIndex, totalCoins, false);
     loadLevel(startIndex);
     state = "playing";
+    setGameMenuOpen(false);
     sound.wake();
   }
 
@@ -816,13 +822,46 @@
     totalCoins = savedTotal;
     saveProgress(levelIndex, savedTotal, false);
     state = "playing";
+    setGameMenuOpen(false);
     sound.wake();
+  }
+
+  function setGameMenuOpen(open) {
+    gameMenu.hidden = !open;
+    menuButton.textContent = open ? "关闭" : "菜单";
+    if (open) keys.clear();
+  }
+
+  function pauseGame() {
+    if (state !== "playing") return;
+    state = "paused";
+    setGameMenuOpen(true);
+    announce("游戏暂停");
+  }
+
+  function resumeGame() {
+    if (state !== "paused") return;
+    state = "playing";
+    setGameMenuOpen(false);
+    announce("继续游戏");
+  }
+
+  function restartCurrentStage() {
+    if (!["playing", "paused"].includes(state)) return;
+    const savedTotal = Math.max(0, totalCoins - levelCoins);
+    lives = 3;
+    loadLevel(levelIndex);
+    totalCoins = savedTotal;
+    state = "playing";
+    setGameMenuOpen(false);
+    announce(`第 ${levelIndex + 1} 关已重新开始`);
   }
 
   function openLevelSelect(preferred = progress.current) {
     selectedLevel = clamp(preferred, 0, progress.unlocked);
     state = "levelselect";
     stateTimer = 0;
+    setGameMenuOpen(false);
     sound.setScene(selectedLevel);
     announce(`选择关卡，已解锁至第 ${progress.unlocked + 1} 关`);
   }
@@ -834,6 +873,7 @@
     saveProgress(index, totalCoins, progress.completed);
     loadLevel(index);
     state = "playing";
+    setGameMenuOpen(false);
     sound.wake();
   }
 
@@ -1275,16 +1315,13 @@
     comboTimer = Math.max(0, comboTimer - dt);
     if (comboTimer === 0) combo = 0;
 
-    if (pressed.has("KeyP") && ["playing", "paused"].includes(state)) {
-      state = state === "playing" ? "paused" : "playing";
-      announce(state === "paused" ? "游戏暂停" : "继续游戏");
+    if ((pressed.has("KeyP") || pressed.has("Escape")) && ["playing", "paused"].includes(state)) {
+      if (state === "playing") pauseGame();
+      else resumeGame();
     }
 
     if (pressed.has("KeyR") && ["playing", "paused"].includes(state)) {
-      const savedTotal = totalCoins - levelCoins;
-      loadLevel(levelIndex);
-      totalCoins = savedTotal;
-      state = "playing";
+      restartCurrentStage();
     }
 
     if (pressed.has("KeyL") && ["title", "victory"].includes(state)) openLevelSelect();
@@ -2015,7 +2052,7 @@
       shade();
       panel(82, 60, 156, 57);
       drawPixelText("PAUSED", W / 2, 70, 16, "#ffe38a", "center");
-      drawPixelText("按 P 继续", W / 2, 98, 7, "#d3deea", "center");
+      drawPixelText("可继续、重开或返回选关", W / 2, 98, 6, "#d3deea", "center");
     }
 
     if (state === "levelclear") {
@@ -2222,6 +2259,18 @@
     button.addEventListener("pointercancel", up);
     button.addEventListener("pointerleave", up);
   });
+
+  menuButton.addEventListener("click", () => {
+    sound.wake();
+    if (state === "playing") pauseGame();
+    else if (state === "paused") resumeGame();
+    else if (["title", "victory"].includes(state)) openLevelSelect();
+    else announce("当前界面不需要暂停");
+  });
+
+  resumeButton.addEventListener("click", resumeGame);
+  restartButton.addEventListener("click", restartCurrentStage);
+  levelSelectButton.addEventListener("click", () => openLevelSelect(levelIndex));
 
   muteButton.addEventListener("click", () => {
     sound.muted = !sound.muted;

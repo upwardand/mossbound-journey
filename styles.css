@@ -239,6 +239,58 @@ kbd {
   background: linear-gradient(145deg, rgba(188, 133, 57, 0.94), rgba(126, 82, 70, 0.94));
 }
 
+.game-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(7, 15, 27, 0.72);
+  backdrop-filter: blur(9px);
+}
+
+.game-menu[hidden] {
+  display: none;
+}
+
+.game-menu-panel {
+  display: grid;
+  width: min(270px, calc(100% - 24px));
+  gap: 9px;
+  padding: 20px;
+  border: 1px solid rgba(210, 236, 239, 0.38);
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(39, 62, 83, 0.97), rgba(18, 30, 48, 0.98));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+  text-align: center;
+}
+
+.game-menu-panel strong {
+  color: #ffe49a;
+  font-size: 20px;
+}
+
+.game-menu-panel small {
+  margin-bottom: 4px;
+  color: #b9ccd6;
+  font-size: 12px;
+}
+
+.game-menu-panel button {
+  min-height: 42px;
+  border: 1px solid rgba(194, 225, 232, 0.35);
+  border-radius: 12px;
+  background: rgba(53, 78, 101, 0.92);
+  color: #fff2cf;
+  font-weight: 750;
+}
+
+.game-menu-panel button:last-child {
+  border-color: rgba(255, 190, 145, 0.42);
+  background: rgba(112, 67, 76, 0.9);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
