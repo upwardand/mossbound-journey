@@ -65,23 +65,26 @@
 
   function readProgress() {
     try {
-      if (typeof localStorage === "undefined") return { current: 0, totalCoins: 0, completed: false };
+      if (typeof localStorage === "undefined") return { current: 0, unlocked: 0, totalCoins: 0, completed: false };
       const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || "null");
-      if (!saved || !Number.isInteger(saved.current)) return { current: 0, totalCoins: 0, completed: false };
+      if (!saved || !Number.isInteger(saved.current)) return { current: 0, unlocked: 0, totalCoins: 0, completed: false };
       return {
         current: clamp(saved.current, 0, 9),
+        unlocked: saved.completed ? 9 : clamp(Number.isInteger(saved.unlocked) ? saved.unlocked : saved.current, 0, 9),
         totalCoins: Math.max(0, Number(saved.totalCoins) || 0),
         completed: Boolean(saved.completed),
       };
     } catch {
-      return { current: 0, totalCoins: 0, completed: false };
+      return { current: 0, unlocked: 0, totalCoins: 0, completed: false };
     }
   }
 
   let progress = readProgress();
 
   function saveProgress(current, savedCoins, completed = false) {
-    progress = { current: clamp(current, 0, 9), totalCoins: Math.max(0, savedCoins), completed };
+    const nextCurrent = clamp(current, 0, 9);
+    const unlocked = completed ? 9 : Math.max(progress.unlocked || 0, nextCurrent);
+    progress = { current: nextCurrent, unlocked, totalCoins: Math.max(0, savedCoins), completed };
     try {
       if (typeof localStorage !== "undefined") localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
     } catch {
@@ -145,9 +148,10 @@
       ];
       const melody = songs[Math.floor(this.scene / 3) % songs.length];
       const step = this.musicStep % melody.length;
-      this.tone(melody[step], 0.18, step % 2 ? "triangle" : "sine", 0.008);
-      if (step % 2 === 0) this.tone(melody[step] / 2, 0.28, "triangle", 0.005);
-      if (step === 0 || step === 4) this.tone(70 + (this.scene % 3) * 8, 0.08, "square", 0.006, -12);
+      this.tone(melody[step], 0.2, step % 2 ? "triangle" : "sine", 0.014);
+      if (step % 2 === 0) this.tone(melody[step] / 2, 0.32, "triangle", 0.008);
+      if (step % 4 === 0) this.tone(melody[step] * 1.5, 0.38, "sine", 0.005);
+      if (step === 0 || step === 4) this.tone(70 + (this.scene % 3) * 8, 0.1, "square", 0.009, -12);
       this.musicStep += 1;
     }
 
@@ -525,6 +529,8 @@
     ...extraLevelConfigs.map((config) => () => buildConfiguredLevel(config)),
   ];
 
+  const levelNames = ["苔风原野", "月影遗迹", "幽蓝洞窟", "赤铜工坊", "浮云高墙", "晶辉矿井", "余烬王城", "霜风绝岭", "虚空长桥", "星冠天城"];
+
   const stageRules = [
     { mechanic: "冲刺起步", moving: 0, crumble: 0, bounce: 2 },
     { mechanic: "碎裂石桥", moving: 0, crumble: 2, bounce: 1 },
@@ -725,6 +731,7 @@
   let deathsThisLevel = 0;
   let levelStartTime = 0;
   let clearRank = "C";
+  let selectedLevel = 0;
 
   function makePlayer(x, y) {
     return {
@@ -810,6 +817,33 @@
     saveProgress(levelIndex, savedTotal, false);
     state = "playing";
     sound.wake();
+  }
+
+  function openLevelSelect(preferred = progress.current) {
+    selectedLevel = clamp(preferred, 0, progress.unlocked);
+    state = "levelselect";
+    stateTimer = 0;
+    sound.setScene(selectedLevel);
+    announce(`选择关卡，已解锁至第 ${progress.unlocked + 1} 关`);
+  }
+
+  function startSelectedLevel(index = selectedLevel) {
+    if (index < 0 || index > progress.unlocked) return;
+    selectedLevel = index;
+    lives = 3;
+    saveProgress(index, totalCoins, progress.completed);
+    loadLevel(index);
+    state = "playing";
+    sound.wake();
+  }
+
+  function levelButtonRect(index) {
+    return {
+      x: 24 + (index % 5) * 56,
+      y: 61 + Math.floor(index / 5) * 42,
+      w: 48,
+      h: 32,
+    };
   }
 
   function isSolid(tx, ty) {
@@ -1117,7 +1151,7 @@
       clearRank = coinRatio >= 0.8 && deathsThisLevel === 0 && elapsed < 95 ? "S" : coinRatio >= 0.55 && deathsThisLevel <= 1 ? "A" : coinRatio >= 0.3 ? "B" : "C";
       score += { S: 1000, A: 650, B: 350, C: 150 }[clearRank];
       sound.play("win");
-      if (levelIndex < levelBuilders.length - 1) saveProgress(levelIndex + 1, totalCoins, false);
+      if (levelIndex < levelBuilders.length - 1) saveProgress(levelIndex + 1, totalCoins, progress.completed);
       else saveProgress(0, totalCoins, true);
       announce(`第 ${levelIndex + 1} 关完成`);
     }
@@ -1253,6 +1287,17 @@
       state = "playing";
     }
 
+    if (pressed.has("KeyL") && ["title", "victory"].includes(state)) openLevelSelect();
+
+    if (state === "levelselect") {
+      const previousSelection = selectedLevel;
+      if (pressed.has("ArrowLeft") || pressed.has("KeyA")) selectedLevel = Math.max(0, selectedLevel - 1);
+      if (pressed.has("ArrowRight") || pressed.has("KeyD")) selectedLevel = Math.min(progress.unlocked, selectedLevel + 1);
+      if (pressed.has("ArrowUp") || pressed.has("KeyW")) selectedLevel = Math.max(0, selectedLevel - 5);
+      if (pressed.has("ArrowDown") || pressed.has("KeyS")) selectedLevel = Math.min(progress.unlocked, selectedLevel + 5);
+      if (selectedLevel !== previousSelection) sound.setScene(selectedLevel);
+    }
+
     if (state === "playing") {
       updateSpecialPlatforms(dt);
       updatePlayer(dt);
@@ -1271,13 +1316,11 @@
       cameraX = lerp(cameraX, cameraTarget, 1 - Math.pow(0.035, dt));
     } else if (state === "levelclear" && stateTimer > 2.15) {
       if (levelIndex < levelBuilders.length - 1) {
-        lives = 3;
-        loadLevel(levelIndex + 1);
-        state = "playing";
+        openLevelSelect(levelIndex + 1);
       } else {
         state = "victory";
         stateTimer = 0;
-        announce("通关成功！按回车再次冒险");
+        announce("通关成功！按回车进入选关");
       }
     }
 
@@ -1285,7 +1328,8 @@
     if (pressed.has("Enter") || pressed.has("Space")) {
       if (state === "title") startGame(false);
       else if (state === "gameover") retryCurrentStage();
-      else if (state === "victory") startGame(true);
+      else if (state === "victory") openLevelSelect(9);
+      else if (state === "levelselect") startSelectedLevel();
     }
     pressed.clear();
   }
@@ -2043,7 +2087,33 @@
     const touchMode = window.matchMedia("(max-width: 700px), (pointer: coarse) and (max-width: 760px)").matches;
     fillRounded(69, 127, 182, 31, 10, "rgba(20, 39, 54, .48)", "rgba(220, 240, 237, .18)", 0.6);
     drawPixelText(touchMode ? "左右移动 · 跳跃 · 冲刺" : "A / D 移动 · 空格跳跃 · SHIFT 冲刺", W / 2, 133, 7, "#eef5f2", "center");
-    drawPixelText("踩怪、冲刺击破敌人 · 每三关挑战首领", W / 2, 147, 6, "#c6d8dc", "center");
+    drawPixelText("踩怪、冲刺击破敌人 · 每三关挑战首领 · L 选关", W / 2, 147, 6, "#c6d8dc", "center");
+  }
+
+  function drawLevelSelect() {
+    drawBackground();
+    shade(0.4);
+    panel(12, 10, 296, 160);
+    drawPixelText(progress.completed ? "十境巡游" : "关卡选择", W / 2, 20, 16, "#ffe184", "center");
+    drawPixelText(`已解锁 ${progress.unlocked + 1} / 10`, W / 2, 42, 7, "#a9edcf", "center");
+
+    for (let index = 0; index < levelBuilders.length; index += 1) {
+      const rect = levelButtonRect(index);
+      const unlocked = index <= progress.unlocked;
+      const selected = index === selectedLevel;
+      const fill = !unlocked
+        ? "rgba(45, 52, 67, .72)"
+        : selected
+          ? "rgba(190, 131, 64, .9)"
+          : "rgba(48, 82, 99, .82)";
+      const stroke = selected ? "rgba(255, 233, 157, .9)" : "rgba(208, 232, 235, .25)";
+      fillRounded(rect.x, rect.y, rect.w, rect.h, 7, fill, stroke, selected ? 1.2 : 0.7);
+      drawPixelText(unlocked ? `STAGE ${index + 1}` : "LOCKED", rect.x + rect.w / 2, rect.y + 6, 5, unlocked ? "#dcebf0" : "#7f8998", "center");
+      drawPixelText(unlocked ? String(index + 1).padStart(2, "0") : "—", rect.x + rect.w / 2, rect.y + 14, 10, unlocked ? "#fff0bd" : "#626b78", "center");
+    }
+
+    drawPixelText(levelNames[selectedLevel], W / 2, 142, 8, "#fff2cf", "center");
+    drawPixelText("方向键选择 · ENTER 开始 · 手机直接点击", W / 2, 157, 5, "#aebfcd", "center");
   }
 
   function drawEndScreen(victory) {
@@ -2061,7 +2131,7 @@
       drawPixelText(`已收集  ◆ ${totalCoins}`, W / 2, 101, 8, "#ffd45a", "center");
     }
     const pulse = Math.floor(time * 2) % 2 ? "#fff0ba" : "#f1be54";
-    drawPixelText(victory ? "按 ENTER 再次冒险" : "按 ENTER 重试本关", W / 2, 132, 7, pulse, "center");
+    drawPixelText(victory ? "按 ENTER 进入选关" : "按 ENTER 重试本关", W / 2, 132, 7, pulse, "center");
   }
 
   function render() {
@@ -2069,6 +2139,8 @@
     if (shake > 0) ctx.translate(Math.round((Math.random() - 0.5) * 5), Math.round((Math.random() - 0.5) * 4));
     if (state === "title") {
       drawTitle();
+    } else if (state === "levelselect") {
+      drawLevelSelect();
     } else if (state === "gameover") {
       drawEndScreen(false);
     } else if (state === "victory") {
@@ -2101,13 +2173,29 @@
   window.addEventListener("keyup", (event) => keys.delete(normalizeKey(event)));
   window.addEventListener("blur", () => keys.clear());
 
+  function canvasCoordinates(event) {
+    return {
+      x: event.offsetX * (W / canvas.clientWidth),
+      y: event.offsetY * (H / canvas.clientHeight),
+    };
+  }
+
   canvas.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     canvas.focus();
     sound.wake();
-    if (state === "title") startGame(false);
+    if (state === "levelselect") {
+      const point = canvasCoordinates(event);
+      for (let index = 0; index <= progress.unlocked; index += 1) {
+        const rect = levelButtonRect(index);
+        if (point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h) {
+          startSelectedLevel(index);
+          break;
+        }
+      }
+    } else if (state === "title") startGame(false);
     else if (state === "gameover") retryCurrentStage();
-    else if (state === "victory") startGame(true);
+    else if (state === "victory") openLevelSelect(9);
   });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   gameShell.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
